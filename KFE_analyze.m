@@ -1,0 +1,621 @@
+%%
+%%Automatic feature extraction protocol. Requires KFE import. Outputs summary kinematic info per participant.
+%%by J.P. Trujillo, November 2015.
+%%version 2.0. added summary of average hold-time (per hold, as well as
+%%total hold-time over trials
+
+%
+
+%%MAKE HOLDS NOT DEFINED BEFORE FIRST SUBMOVEMENT OR AFTER LAST
+
+function KFE_analyze(Path, sbj, datatrials, FPS)
+
+FullOutput = [Path, 'Beh_full.mat'];
+%%
+%%dynamic struct field reference
+jx = cell(1,25);
+for i = 1:25,
+    jx(i) = {strcat('j',  num2str(i-1))};
+end
+% %Trial list
+% for i =1:37,
+%     TR{i} = ['Trial ',num2str(i)];
+% end
+R = 1;
+
+BehF = gen_beh;%output header
+
+for x = [sbj],
+    if x < 10,
+         filename = [Path, 'sbj_0', num2str(x), '.txt'];
+%         filename = [Path, 'pp_0', num2str(x), '_G.txt'];
+        OutPath = [Path, 'sbj_0',num2str(x),'\'];
+        outputfile = [OutPath, 'Beh_sbj_0', num2str(x), '.mat'];
+        structfile = [OutPath,'Cm_sbj_0', num2str(x), '.mat'];
+        graphpath = [OutPath, 'MovGraph_sbj_0', num2str(x),'.fig'];
+        if datatrials.set==2,
+            datatrials.onoffname = ['sbj_0' num2str(x) '_onsets.txt']; 
+        end
+    else
+        filename = [Path,'sbj_', num2str(x), '.txt'];
+%         filename = [Path,'pp_', num2str(x), '_G.txt'];
+        OutPath = [Path, 'sbj_',num2str(x),'\'];
+        outputfile = [OutPath,'Beh_sbj_', num2str(x), '.mat'];
+        structfile = [OutPath,'Cm_sbj_', num2str(x), '.mat'];
+        graphpath = [OutPath, 'MovGraph_sbj_', num2str(x),'.fig'];
+        if datatrials.set==2,
+            datatrials.onoffname = ['sbj_' num2str(x) '_onsets.txt']; 
+        end
+    end
+    if datatrials.fixed ==1 && x <10,
+        fileorder = [Path, 'sbj_0', num2str(x), '_order.txt'];
+%         fileorder = [Path, 'pp_0', num2str(x), '_G_order.txt'];
+    elseif datatrials.fixed ==1 && x >=10,
+        fileorder = [Path, 'sbj_', num2str(x), '_order.txt'];
+%         fileorder = [Path, 'pp_', num2str(x), '_G_order.txt'];
+    end
+    
+    %     import and restructure data
+    if ~exist(structfile, 'file'), %first check if basic data structure is there
+        if datatrials.fixed ==1,
+            [COR, DUR,ms] = KFE_import(filename,datatrials,fileorder);
+            if ~exist('OutPath','dir'),
+                mkdir(OutPath);
+            end
+            save(structfile,'COR','DUR','ms');
+        else
+            [COR, DUR,ms] = KFE_import(filename,datatrials);
+            if ~exist('OutPath','dir')==1,
+                mkdir(OutPath);
+            end
+            save(structfile,'COR','DUR','ms');
+        end
+    else
+        load(structfile);
+    end
+    
+    fprintf('\nBeginning analysis of subject: %d',x);
+    
+    %%
+    %%%%%%%ANALYSES%%%%%%%
+    %%set analysis window; take joint data within window for analyses (ie.
+    %%analyze one trial at all metrics)
+    
+    Beh = gen_beh;
+    t = 1; %NOTE: remove this and "BK+" from Beh additions to output data in stacked fashion (block one above block two)
+    a = 1; %trial counter
+    %get trial-specific data
+    ii = 1; %acquisition counter
+    %         figure; %figure for movement graphs
+    cmp = colormap(parula(length(DUR))); %colourmap for graphs
+    hold on
+    BK = 0; %session or run number (starts at 0)
+    for i = 1:(length(DUR)+length(ms)),
+        
+        
+        BehF{1+R,1} = x; BehF{1+R,2} = BK; BehF{1+R,3} = i;
+        Beh{1+t,1} = x; Beh{1+t,2} = BK; Beh{1+t,3} = i;
+        if isempty(find(i==ms)) && DUR(a)~=0,%if current trial number (t) is not missing or empty,
+            clear Trial
+            TrialS = ii; TrialF = (ii + (DUR(a)-1)); %set analysis window
+            for ij = 1:25,
+                try
+                    Trial.(jx{ij}) = COR.(jx{ij})(TrialS:TrialF,:); %populate Trial variable with trial-specific joint data
+                catch
+                    TrialF = TrialF-1;
+                    Trial.(jx{ij}) = COR.(jx{ij})(TrialS:TrialF,:);
+                end
+            end
+            ii = TrialF+1;  %set for next trial
+            save([OutPath,'Skeleton_Trial-',num2str(i)],'Trial'); %save skeleton
+
+            
+            hold on
+            %%
+            %%SIZE (DISTANCE)
+            %calcuate size as greatest distance from origin of hand
+            
+            LHo(1:3) = [mean(Trial.j11(1:5,2)),mean(Trial.j11(1:5,3)),mean(Trial.j11(1:5,4))]; %set right hand origin
+            RHo(1:3) = [mean(Trial.j7(1:5,2)),mean(Trial.j7(1:5,3)),mean(Trial.j7(1:5,4))];  %set left hand origin
+            
+            %find maximum
+            Rdis = 6:DUR(a); Ldis = 6:DUR(a);
+            for g = 6:DUR(a),%calculate total distance from origin at each acquisition
+                Ldis(g-5) = sqrt(((Trial.j11(g,2)-LHo(1)).^2)+((Trial.j11(g,3)-LHo(2)).^2)+((Trial.j11(g,4)-LHo(3)).^2)); 
+                Rdis(g-5) = sqrt(((Trial.j7(g,2)-RHo(1)).^2)+((Trial.j7(g,3)-RHo(2)).^2)+((Trial.j7(g,4)-RHo(3)).^2));
+            end
+            Rmax = (max(Rdis)); %Right hand, max distance from origin
+            Lmax = (max(Ldis)); %Left hand, max distance from origin
+            BehF{1+R,(BK.*18)+4} = Rmax; BehF{1+R,(BK.*18)+5} = Lmax; %write to output variable
+            Beh{1+t,(BK.*18)+4} = Rmax; Beh{1+t,(BK.*18)+5} = Lmax;
+            %%
+            %%Speed (avg velocity)
+            duri = DUR(a); %get current trial duration
+            
+            %avg framerate is 30, so 10 acquisitions ~= 0.3seconds
+            %rate change per third of a second (use subfuntion)
+            Ldelta = XYZ_delta_array(Trial.j7,duri,1);  %right hand
+            Rdelta = XYZ_delta_array(Trial.j11,duri,1);   %left hand
+            
+            %average rate change over trial
+            RdeltaT = (mean(Rdelta)).*33; %average right hand speed per second
+            LdeltaT = (mean(Ldelta)).*33; %average left hand speed per second
+            deltaT = (RdeltaT + LdeltaT)./2;
+            BehF{1+R,(BK.*18)+6} = deltaT; %total average
+            Beh{1+t,(BK.*18)+6} = deltaT;
+            %%
+            %%Size (Distance travelled)
+            %calculates size based on the total distance travelled by the
+            %hands
+            RDIS = sum(Rdelta); LDIS = sum(Ldelta); %sum of .3s change variable
+            BehF{1+R,(BK.*18)+7} = (RDIS+LDIS); %total distance covered by both hands
+            Beh{1+t,(BK.*18)+7} = (RDIS+LDIS);
+            %clear Rdelta Ldelta deltaT
+            %%
+            %%SPACE (Vertical Amplitude)
+            %H: 0 = below midline; 1 = between midline and middle-upper
+            %body; 2 = above middle-upper body, but below shoulders; 3
+            %= between shoulders and middle of face; 4 = between middle
+            %of face and top of head; 5 = above head
+            H = 0;
+            %             figure;
+            %             subplot(2,1,1); plot(1:length(Trial.j11(:,3)),Trial.j11(:,3));
+            %             hold on
+            %             plot(1:length(Trial.j11(:,3)),Trial.j1(:,3));
+            %             subplot(2,1,2); plot(1:length(Trial.j7(:,3)),Trial.j7(:,3));
+            %             hold on
+            %             plot(1:length(Trial.j7(:,3)),Trial.j1(:,3));
+            %             hold off
+            k = 1;
+            for g = 1:duri,
+                MU(g) = ((Trial.j20(g,3)-Trial.j1(g,3))./2)+Trial.j1(g,3); %middle-upper torso
+                MF(g) = ((Trial.j3(g,3)-Trial.j20(g,3))./2)+Trial.j20(g,3); %middle face
+                if Trial.j11(g,3) > Trial.j1(g,3) || Trial.j7(g,3)>Trial.j1(g,3), %compare to spine-mid
+                    if Trial.j11(g,3) > MU(g) || Trial.j7(g,3)>MU(g), %compare to middle-upper
+                        if Trial.j11(g,3)>Trial.j20(g,3)||Trial.j7(g,3)>Trial.j20(g,3), %compare to shoulder-mid
+                            if Trial.j11(g,3)>MF(g) || Trial.j7(g,3)>MF(g), %compare to face
+                                if Trial.j11(g,3)>Trial.j3(g,3)||Trial.j7(g,3)>Trial.j3(g,3), %compare to top of head
+                                    H(k) = 5;
+                                    k = k+1;
+                                else
+                                    H(k) = 4; k = k+1;
+                                end
+                            else
+                                H(k) = 3; k = k+1;
+                            end
+                        else
+                            H(k) = 2; k = k+1;
+                        end
+                        
+                    else
+                        point = g;
+                        H(k) = 1; k = k+1;
+                    end
+                else
+                    H(k) = 0; k = k+1;
+                end
+            end
+            BehF{1+R,(BK.*18)+8} = max(H); %greatest height, proportional to body, used in trial
+            Beh{1+t,(BK.*18)+8} = max(H);
+            clear H g
+            %%
+            %%HANDEDNESS (1 vs 2)
+            Ruse = Rmax>0.15; %find instances of Right Hand moving > 15cm
+            if any(Ruse(:)>0) == 1,
+                Ruse = 1; %if any instances are found, Right hand was active
+            else
+                Ruse = 0; %otherwise, Right Hand was inactive
+            end
+            Luse = Lmax>0.15;
+            if any(Luse(:)>0) == 1,
+                Luse = 1;
+            else
+                Luse = 0;
+            end
+            if Ruse == 1 && Luse == 0,
+                BehF{1+R,(BK.*18)+9} = 1;
+                Beh{1+t,(BK.*18)+9} = 1; %Right handed trial
+            elseif Ruse == 0 && Luse == 1,
+                BehF{1+R,(BK.*18)+9} = 2;
+                Beh{1+t,(BK.*18)+9} = 2; %Left handed trial
+            elseif Ruse == 1 && Luse == 1,
+                BehF{1+R,(BK.*18)+9} = 3;
+                Beh{1+t,(BK.*18)+9} = 3; %ambidex trial
+            else
+                BehF{1+R,(BK.*18)+9} = 4;
+                Beh{1+t,(BK.*18)+9} = 4; %No-handed (error catch)
+            end
+            
+            %%
+            %%SIZE (JOINTS)
+            LEo(1:3) = [mean(Trial.j9(1:5,2)),mean(Trial.j9(1:5,3)),mean(Trial.j9(1:5,4))]; %set right elbow origin
+            REo(1:3) = [mean(Trial.j5(1:5,2)),mean(Trial.j5(1:5,3)),mean(Trial.j5(1:5,4))];  %set left elbow origin
+            
+            Rdis = 1:(DUR(a))-5; Ldis = 1:(DUR(a))-5; %reset distance variables
+            for g = 6:DUR(a),%calculate total distance from origin at each acquisition
+                Ldis(g-5) = sqrt(((Trial.j9(g,2)-LEo(1)).^2)+((Trial.j9(g,3)-LEo(2)).^2)+((Trial.j9(g,4)-LEo(3)).^2));
+                Rdis(g-5) = sqrt(((Trial.j5(g,2)-REo(1)).^2)+((Trial.j5(g,3)-REo(2)).^2)+((Trial.j5(g,4)-REo(3)).^2));
+            end
+            
+            Relb = Rdis>0.05; %find instances of Right Elbow moving > 5cm
+            if any(Relb(:)>0) == 1,
+                Relbuse = 1; %if any instances are found, upper arm was active
+            else
+                Relbuse = 0; %otherwise, upper arm was inactive
+            end
+            Lelb = Ldis>0.05;
+            if any(Lelb(:)>0) == 1,
+                Lelbuse = 1;
+            else
+                Lelbuse = 0;
+            end
+            if Ruse == 1 && Relbuse == 1, %if hand and elbow were active,
+                Rsize = 2; %Right-hand size is 2
+            elseif Ruse == 1 && Relbuse == 0, %if only the hand was active,
+                Rsize = 1; %Right-hand size is 1
+            else
+                Rsize = 0; %If neither were active, OR if only the elbow was active, right hand size is 0
+            end
+            if Luse == 1 && Lelbuse == 1,
+                Lsize = 2;
+            elseif Luse == 1 && Lelbuse == 0,
+                Lsize = 1;
+            else
+                Lsize = 0;
+            end
+            Beh{1+t,(BK.*18)+10} = Rsize; Beh{1+t,(BK.*18)+11} = Lsize;
+            BehF{1+R,(BK.*18)+10} = Rsize; BehF{1+R,(BK.*18)+11} = Lsize;
+            clear REo LEo Rdis Ldis Relb Lelb Relbuse Lelbuse Lsize Rsize
+            
+             %%
+            %%SEGMENTATION
+            %calculate number of individual submovements (based on Meyer
+            %1988)
+            RHD = XYZ_delta_array(Trial.j11,duri,1);
+            LHD = XYZ_delta_array(Trial.j7,duri, 1);
+            RH_S = RHD./(1./FPS); LH_S = LHD./(1./FPS); %calculate velocity
+            
+            [R_pk2,R_lc2] = findpeaks(RH_S,'MinPeakHeight',0.2,'MinPeakProminence',0.2,'MinPeakDistance',5);
+            RH_subs = length(R_pk2); %how many peaks?
+            [L_pk2,L_lc2] = findpeaks(LH_S,'MinPeakHeight',0.2,'MinPeakProminence',0.2,'MinPeakDistance',5);
+            LH_subs = length(L_pk2); %how many peaks?          
+            
+            
+            BehF{R+1,(BK.*18)+14} = RH_subs; BehF{R+1,(BK.*18)+15} = LH_subs;
+            Beh{t+1,(BK.*18)+14} = RH_subs; Beh{t+1,(BK.*18)+15} = LH_subs;
+            clear RH_subs LH_subs 
+            
+            
+            %%
+            %%HOLD (count and max duration)
+            %movement start and end (to exclude resting state being counted as a hold)
+            
+            %calculate right side
+            if Ruse == 1,
+                
+                GRix = find(RH_S<0.1); %right hand static momements
+                if numel(GRix) ==0,
+                    GRix = 0;
+                end
+                
+                REdelta = (XYZ_delta_array(Trial.j5,duri,1))./(1./FPS); %R elbow array
+                GERix = find(REdelta<0.1); %right elbow static moments
+                if numel(GERix) ==0,
+                    GERix = 0;
+                end
+                
+                RTdelta = (XYZ_delta_array(Trial.j21,duri,1))./(1./FPS);%R finger array
+                GTRix = find(RTdelta<0.1); %right thumb static moments
+                if numel(GTRix) ==0,
+                    GTRix = 0;
+                end
+                
+                %find holds for entire right side
+                GR = 0; g = 1;
+                for k = 1:length(GRix),
+                    if ~isempty(find(GRix(k) == GERix)),
+                        if ~isempty(find(GRix(k) == GTRix)),
+                            GR(g) = GRix(k);
+                            g = g+1;
+                        end
+                    end
+                end
+            end
+            
+            
+            %calculate left side
+            if Luse == 1,
+                
+                GLix = find(LH_S<0.1); %left hand static moments
+                if numel(GLix) ==0,
+                    GLix = 0;
+                end
+                
+                LEdelta = (XYZ_delta_array(Trial.j9,duri,1))./(1./FPS); %left elbow array
+                GELix = find(LEdelta<0.1);%left elbow static moments
+                if numel(GELix) ==0,
+                    GELix = 0;
+                end
+                
+                LTdelta = (XYZ_delta_array(Trial.j23,duri,1))./(1./FPS);%left thumb array
+                GTLix = find(LTdelta<0.1);%left thumb static moments
+                if numel(GTLix) ==0,
+                    GTLix = 0;
+                end
+                
+                %find holds for entire left side
+                GL = 0; g = 1;
+                for k = 1:length(GLix),
+                    if ~isempty(find(GLix(k) == GELix)),
+                        if ~isempty(find(GLix(k) == GTLix)),
+                            GL(g) = GLix(k);
+                            g = g+1;
+                        end
+                    end
+                end
+            end
+            
+            if exist('GR') || exist('GL'),
+                %find holds involving ALL joints
+                if Ruse == 1 && Luse ==1,
+                    g = 1; G = 0;
+                    for k = 1:length(GL),
+                        if ~isempty(find(GL(k) == GR)),
+                            G(g) = GL(k);
+                            g = g+1;
+                        end
+                    end
+                elseif Ruse == 1,
+                    G = GR;
+                else
+                    G = GL;
+                end
+                jj = 1; %grouping counter
+                clear GT
+                GT{jj}(1) = G(1);
+                
+                k = 2;
+                %variable 'G' will group 0s and 1s together
+                %CHECK THIS
+                for j = 2:length(G),
+                    if G(j) ~= (GT{jj}(k-1))+1,
+                        jj = jj+1;
+                        k = 2; GT{jj}(1) = G(j);
+                    else
+                        GT{jj}(k) = G(j); k = k+1;
+                    end
+                end
+
+                INT = min([L_lc2; R_lc2]);
+                FNL = max([L_lc2; R_lc2]);
+                
+                %remove resting states
+                if GT{1}(1) < INT, %if the first hold occurs before the first submove,
+                    GT{1} = 0; %discard (not a real hold) -- resting state
+                end
+                L = length(GT);
+                for j = 1:L,
+                    if GT{j}(1) >FNL,
+                        GT{j} = 0;%same for end
+                    end
+                end
+                
+                %find total hold time
+                H = 0; %number of occurences
+                h = 0; %number of bins                
+                aa = 1;
+                Ha = [];
+                for j = 1:length(GT),
+                    if length(GT{j}) >= 3,
+                        h = h+(length(GT{j})); %get number of 0.1s bins
+                        H = H +1;%take number of INDIVIDUAL occurences
+                        Ha(aa) = length(GT{j}); %length of hold
+                        aa = aa+1;
+                    end
+                end
+                %                 for j = 1:length(GT),
+                %                     if GT{j}(1) == 1, %if this is a hold grouping
+                %                         H = H+1; %count one occurence
+                %                         h = h+(length(GT{j})); %get length(number of .3s bins
+                %                     end
+                %                 end
+                %sum total time in seconds
+                hS = h./30;
+                BehF{R+1,(BK.*18)+12} = H; BehF{R+1,(BK.*18)+13} = hS;
+                Beh{t+1,(BK.*18)+12} = H; Beh{t+1,(BK.*18)+13} = hS;
+                BehF{R+1,(BK.*18)+18} = mean(Ha);   %lenth is in number of frames!
+                Beh{t+1,(BK.*18)+18} = mean(Ha);
+            else
+                GT = [];
+                BehF{R+1,(BK.*18)+12} = 0; BehF{R+1,(BK.*18)+13} = 0;
+                Beh{t+1,(BK.*18)+12} = 0; Beh{t+1,(BK.*18)+13} = 0;
+                BehF{R+1,(BK.*18)+18} = 0;   
+                Beh{t+1,(BK.*18)+18} = 0;
+            end
+            clear G jj k L GL GR GLix GRix GERix GTRix GELix GTLix
+            
+            %%Plot velocity with holds and submoves
+            vel_plot(LH_S,L_lc2,L_pk2,GT,OutPath,x,'L',i)
+            vel_plot(RH_S,R_lc2,R_pk2,GT,OutPath,x,'R',i)
+
+           
+            %%
+            %%PEAK VELOCITY
+            %calulate peak velocity achieved over trial (average of 3 bins
+            %to minimize influence of artefacts)
+            
+            RH_Vs = smooth(RH_S,3,'moving'); LH_Vs = smooth(LH_S,3,'moving');
+            Beh{t+1,(BK.*18)+16} = max(RH_Vs); Beh{t+1,(BK.*18)+17} = max(LH_Vs);
+            BehF{R+1,(BK.*18)+16} = max(RH_Vs); BehF{R+1,(BK.*18)+17} = max(LH_Vs);
+            clear RH_S RH_Vs LH_S LH_Vs
+            a = a+1;
+        elseif isempty(find(i==ms)) && DUR(a) ==0,
+            legend_temp{a} = TR{i};
+            a = a+1;
+        end
+        t = t+1; R=R+1;
+        
+        hold off
+        
+        %save file
+        save(outputfile, 'Beh'); %write to file
+    end
+    
+    clear trialdurBNC trialdurBC msC msNC NCm Cm Ldelta LdeltaT LTdelta Rdelta REdelta RTdelta Trial VL VR DUR cmp COR
+end
+save(FullOutput,'BehF');
+end
+
+
+function D = XYZ_delta_array(joint, DUR, ax)
+%bin the trial as called =
+durB = floor(DUR./ax); %divide by precision(ax) variable
+k = 1;g = 1;
+D = 1:(durB-1);
+%calculate displacement across each bin
+while (k+ax) <= DUR,
+    D(g) = sqrt(((joint(k+ax,2)-joint(k,2)).^ 2)+((joint(k+ax,3)-joint(k,3)).^ 2)+((joint(k+ax,4)-joint(k,4)).^ 2)); %distance travelled per bin
+    g = g+1; k = k+ax;
+end
+D = smooth(D,15,'sgolay',5); %resmooth the displacement vector
+end
+
+
+function vel_plot(S,lc2,pk2,GT,OutPath,pp,H,i)
+
+close(gcf)
+ %plot velocity profile
+plot(lc2,pk2,'x','Color','r'); %plot major peaks (submove peaks)
+hold on
+plot([0 length(S)],[0.2 0.2]); %draw cut-off line
+a=1;
+if ~isempty(GT),%plot holds if they're found
+    for x = 1:length(GT),
+        if length(GT{x})>=3,
+            I = min(S);
+            E = length(GT{x});
+            x1 = floor(GT{x}(1)+((GT{x}(E)-GT{x}(1))./2));
+            %try to plot grey rectangles for holds
+            rectangle('Position',[GT{x}(1),I,E,(max(S)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
+            'LineWidth',0.1)
+%             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
+%             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
+            text(x1,max(S),num2str(a));
+            a=a+1;
+        end
+    end
+end
+plot(S,'Color','b');
+title(['Submoves trial: ',num2str(i),'  ',H,'-hand'])
+saveas(gcf,[OutPath,'sbj_',num2str(pp),'_Submoves_trial-',num2str(i),'_',H]);
+hold off
+close(gcf)
+
+end
+function vel_plot_extra(S,lc2,pk2,GT,OutPath,pp,H,i,Trial)
+vidObj = VideoWriter(['C:/Users/James/Documents/Matlab/skeleton_dual_extraR.avi']);
+open(vidObj);
+close(gcf)
+ %plot velocity profile
+figure('Color',[0 0 0],'pos',[10 10 1400 600]);
+for IX=1:size(Trial.j7,1)
+    hold off;
+    subplot(1,2,1)
+    
+    %left arm
+    plot3([Trial.j6(IX,2) Trial.j7(IX,2)],[Trial.j6(IX,3) Trial.j7(IX,3)],[Trial.j6(IX,4) Trial.j7(IX,4)],'LineWidth',1.5,'color','g');
+    hold on;
+    set(subplot(1,2,1),'Color',[0 0 0])
+    set(gca,'Xdir','reverse')
+%     az = 90; el = -180;
+    az = 1; el = 90;
+    view(az,el)
+    plot3([Trial.j6(IX,2) Trial.j5(IX,2)],[Trial.j6(IX,3) Trial.j5(IX,3)],[Trial.j6(IX,4) Trial.j5(IX,4)],'LineWidth',1.5,'color','g');
+    plot3([Trial.j8(IX,2) Trial.j9(IX,2)],[Trial.j8(IX,3) Trial.j9(IX,3)],[Trial.j8(IX,4) Trial.j9(IX,4)],'LineWidth',1.5,'color','g');
+    plot3([Trial.j8(IX,2) Trial.j20(IX,2)],[Trial.j8(IX,3) Trial.j20(IX,3)],[Trial.j8(IX,4) Trial.j20(IX,4)],'LineWidth',1.5,'color','g');
+    %right arm
+    plot3([Trial.j10(IX,2) Trial.j11(IX,2)],[Trial.j10(IX,3) Trial.j11(IX,3)],[Trial.j10(IX,4) Trial.j11(IX,4)],'LineWidth',1.5,'color','g');
+    plot3([Trial.j10(IX,2) Trial.j9(IX,2)],[Trial.j10(IX,3) Trial.j9(IX,3)],[Trial.j10(IX,4) Trial.j9(IX,4)],'LineWidth',1.5,'color','g');
+    plot3([Trial.j4(IX,2) Trial.j5(IX,2)],[Trial.j4(IX,3) Trial.j5(IX,3)],[Trial.j4(IX,4) Trial.j5(IX,4)],'LineWidth',1.5,'color','g');
+    plot3([Trial.j4(IX,2) Trial.j20(IX,2)],[Trial.j4(IX,3) Trial.j20(IX,3)],[Trial.j4(IX,4) Trial.j20(IX,4)],'LineWidth',1.5,'color','g')
+    
+    %remain
+    plot3([Trial.j1(IX,2) Trial.j0(IX,2)],[Trial.j1(IX,3) Trial.j0(IX,3)],[Trial.j1(IX,4) Trial.j0(IX,4)],'LineWidth',1.5,'color','g')
+    plot3([Trial.j1(IX,2) Trial.j20(IX,2)],[Trial.j1(IX,3) Trial.j20(IX,3)],[Trial.j1(IX,4) Trial.j20(IX,4)],'LineWidth',1.5,'color','g')
+    plot3([Trial.j2(IX,2) Trial.j20(IX,2)],[Trial.j2(IX,3) Trial.j20(IX,3)],[Trial.j2(IX,4) Trial.j20(IX,4)],'LineWidth',1.5,'color','g')
+    plot3([Trial.j2(IX,2) Trial.j3(IX,2)],[Trial.j2(IX,3) Trial.j3(IX,3)],[Trial.j2(IX,4) Trial.j3(IX,4)],'LineWidth',1.5,'color','g')
+    
+    hold off
+
+    axis([-0.6 0.6 -0.6 0.6 1 3])
+    xlabel('X-axis');ylabel('Y-axis');zlabel('Z-axis');
+    title(num2str(IX));
+    
+    
+    
+    subplot(1,2,2)
+    plot(lc2,pk2,'x','Color','r'); %plot major peaks (submove peaks)
+
+    hold on
+    plot([0 length(S)],[0.2 0.2]); %draw cut-off line
+    a=1;
+    if ~isempty(GT),%plot holds if they're found
+        for x = 1:length(GT),
+            if length(GT{x})>=3,
+                I = min(S);
+                E = length(GT{x});
+                x1 = floor(GT{x}(1)+((GT{x}(E)-GT{x}(1))./2));
+                %try to plot grey rectangles for holds
+                rectangle('Position',[GT{x}(1),I,E,(max(S)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
+                'LineWidth',0.1)
+    %             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
+    %             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
+                text(x1,max(S),num2str(a));
+                a=a+1;
+            end
+        end
+    end
+    plot(S,'Color','b');
+%     plot(D); hold on;
+    plot([IX IX],[min(S) max(S)]);
+    hold off;
+    pause(0.0333)
+    F = getframe(gcf);
+    writeVideo(vidObj,F);
+end
+close(vidObj)
+ 
+plot(lc2,pk2,'x','Color','r'); %plot major peaks (submove peaks)
+hold on
+plot([0 length(S)],[0.2 0.2]); %draw cut-off line
+a=1;
+if ~isempty(GT),%plot holds if they're found
+    for x = 1:length(GT),
+        if length(GT{x})>=3,
+            I = min(S);
+            E = length(GT{x});
+            x1 = floor(GT{x}(1)+((GT{x}(E)-GT{x}(1))./2));
+            %try to plot grey rectangles for holds
+            rectangle('Position',[GT{x}(1),I,E,(max(S)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
+            'LineWidth',0.1)
+%             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
+%             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
+            text(x1,max(S),num2str(a));
+            a=a+1;
+        end
+    end
+end
+plot(S,'Color','b');
+title(['Submoves trial: ',num2str(i),'  ',H,'-hand'])
+saveas(gcf,[OutPath,'sbj_',num2str(pp),'_Submoves_trial-',num2str(i),'_',H]);
+hold off
+close(gcf)
+
+end
+
+
+
+function Beh = gen_beh
+Beh = {'sbj','Block','Trial','Rmax_A','Lmax_A','Speed_A','Distance_A','Space_A','Hands_A','RjointSize_A','LjointSize_A',...
+    'Hold_count_A','Hold_maxtime_A','NumSubsR_A','NumSubsL_A','PeakR_A','PeakL_A','Hold_dur'};
+end
