@@ -11,6 +11,7 @@
 %%per trial (if specified) and indicate submovement peaks with red x's, and
 %%holds with vertical bars and numbering
 %%by J.P. Trujillo, November 2015. 
+%%version 2.1
 
 %%
 %%USER INPUT REQUIRED
@@ -32,12 +33,19 @@ datatrials.fixed = 1;
 %order with one row per trial. column 1 = onset, column 2 = offset
 datatrials.onoffpath = 'D:\data\kinect\Prod';
 
-%does your data use headers?
+%does your data use headers? 
 datatrials.header = 0;
 
-%set for Kinect, change if fps differs
+%set to 1 for the extra video plot with skeleton + velocity profiles
+%(automatically changes FPS to 25 to be compatible with video)
+datatrials.extra = 1;
+
+%set for standard Kinect, change if fps differs - note: using extra plot will
+%override this!
 FPS = 30;  
-sbj = [3,9:41]; %vector for all participant or data file numbers
+
+ %vector for all participant or data file numbers
+sbj = [3,9:41];
 
 %%
 %Run analyses

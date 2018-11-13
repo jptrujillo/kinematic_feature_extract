@@ -3,6 +3,7 @@
 %%by J.P. Trujillo, November 2015.
 %%version 2.0. added summary of average hold-time (per hold, as well as
 %%total hold-time over trials
+%%version 2.1. enable and upgraded extra plot function
 
 %
 
@@ -447,8 +448,16 @@ for x = [sbj],
             RH_Vs = smooth(RH_S,3,'moving'); LH_Vs = smooth(LH_S,3,'moving');
             Beh{t+1,(BK.*18)+16} = max(RH_Vs); Beh{t+1,(BK.*18)+17} = max(LH_Vs);
             BehF{R+1,(BK.*18)+16} = max(RH_Vs); BehF{R+1,(BK.*18)+17} = max(LH_Vs);
+            
+            
+            %%
+            if datatrials.extra == 1,
+                vel_plot_extra(LH_S,RH_S,L_lc2,L_pk2,R_lc2,R_pk2,GT,OutPath,x,i,Trial)
+            end
+            
             clear RH_S RH_Vs LH_S LH_Vs
             a = a+1;
+            
         elseif isempty(find(i==ms)) && DUR(a) ==0,
             legend_temp{a} = TR{i};
             a = a+1;
@@ -512,22 +521,42 @@ hold off
 close(gcf)
 
 end
-function vel_plot_extra(S,lc2,pk2,GT,OutPath,pp,H,i,Trial)
-vidObj = VideoWriter(['C:/Users/James/Documents/Matlab/skeleton_dual_extraR.avi']);
+function vel_plot_extra(SL,SR,lc2_L,pk2_L,lc2_R,pk2_R,GT,OutPath,pp,i,Trial)
+%writes a video file of the current trial, with a skeleton and velocity
+%profile of both hands. Uses sliding-window video of velocity profiles
+
+%dynamic struct field reference
+jx = cell(1,25);
+for i = 1:25,
+    jx(i) = {strcat('j',  num2str(i-1))};
+end
+%center skeleton based on mid-spine
+C = Trial.j1(1,2:4);
+for ii = 1:25, 
+    for i = 1:length(Trial.(jx{ii})),
+    Trial.(jx{ii})(i,2:4) = (Trial.(jx{ii})(i,2:4)-C);
+    end
+end
+
+vidObj = VideoWriter([OutPath num2str(pp) '_' num2str(i) '_skeleton_dual.avi']);
+vidObj.FrameRate = 25; %to match video recordings
+vidObj.Quality = 50; %default 75, but averages 110mb per 1min video
 open(vidObj);
 close(gcf)
- %plot velocity profile
-figure('Color',[0 0 0],'pos',[10 10 1400 600]);
+
+%plot velocity profile
+fh2 = figure('pos',[10 10 1800 600]);
 for IX=1:size(Trial.j7,1)
     hold off;
-    subplot(1,2,1)
-    
+    subplot(1,3,2)
+ 
+        
     %left arm
     plot3([Trial.j6(IX,2) Trial.j7(IX,2)],[Trial.j6(IX,3) Trial.j7(IX,3)],[Trial.j6(IX,4) Trial.j7(IX,4)],'LineWidth',1.5,'color','g');
     hold on;
-    set(subplot(1,2,1),'Color',[0 0 0])
+    set(subplot(1,3,2),'Color',[0 0 0])
     set(gca,'Xdir','reverse')
-%     az = 90; el = -180;
+    %     az = 90; el = -180;
     az = 1; el = 90;
     view(az,el)
     plot3([Trial.j6(IX,2) Trial.j5(IX,2)],[Trial.j6(IX,3) Trial.j5(IX,3)],[Trial.j6(IX,4) Trial.j5(IX,4)],'LineWidth',1.5,'color','g');
@@ -546,73 +575,80 @@ for IX=1:size(Trial.j7,1)
     plot3([Trial.j2(IX,2) Trial.j3(IX,2)],[Trial.j2(IX,3) Trial.j3(IX,3)],[Trial.j2(IX,4) Trial.j3(IX,4)],'LineWidth',1.5,'color','g')
     
     hold off
-
-    axis([-0.6 0.6 -0.6 0.6 1 3])
+    
+%     axis([-0.6 1 -0.6 0.6 1 3])
+    axis([-0.5 0.5 -0.5 0.5 -1 3])
     xlabel('X-axis');ylabel('Y-axis');zlabel('Z-axis');
     title(num2str(IX));
     
     
     
-    subplot(1,2,2)
-    plot(lc2,pk2,'x','Color','r'); %plot major peaks (submove peaks)
-
+    subplot(1,3,1)
+    plot(lc2_L,pk2_L,'x','Color','r'); %plot major peaks (submove peaks)
+        sfh3 = subplot(1,3,1,'Parent',fh2);
+        sfh3.Position = sfh3.Position + [-0.1 0 0.1 0];
+        
     hold on
-    plot([0 length(S)],[0.2 0.2]); %draw cut-off line
+    plot([0 length(SL)],[0.2 0.2]); %draw cut-off line
     a=1;
     if ~isempty(GT),%plot holds if they're found
         for x = 1:length(GT),
             if length(GT{x})>=3,
-                I = min(S);
+                I = min(SL);
                 E = length(GT{x});
                 x1 = floor(GT{x}(1)+((GT{x}(E)-GT{x}(1))./2));
                 %try to plot grey rectangles for holds
-                rectangle('Position',[GT{x}(1),I,E,(max(S)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
-                'LineWidth',0.1)
-    %             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
-    %             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
-                text(x1,max(S),num2str(a));
+                rectangle('Position',[GT{x}(1),I,E,(max(SL)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
+                    'LineWidth',0.1)
+                %             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
+                %             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
+                text(x1,max(SL),num2str(a));
                 a=a+1;
             end
         end
     end
-    plot(S,'Color','b');
-%     plot(D); hold on;
-    plot([IX IX],[min(S) max(S)]);
+    plot(SL,'Color','b');
+    %     plot(D); hold on;
+    plot([IX IX],[min(SL) max(SL)]);
+    xlim([IX-45 IX+45])
+    
+    %right hand
+    subplot(1,3,3)
+    plot(lc2_R,pk2_R,'x','Color','r'); %plot major peaks (submove peaks)
+            sfh4 = subplot(1,3,3,'Parent',fh2);
+        sfh4.Position = sfh4.Position + [0 0 0.1 0];
+        
+    hold on
+    plot([0 length(SR)],[0.2 0.2]); %draw cut-off line
+    a=1;
+    if ~isempty(GT),%plot holds if they're found
+        for x = 1:length(GT),
+            if length(GT{x})>=3,
+                I = min(SR);
+                E = length(GT{x});
+                x1 = floor(GT{x}(1)+((GT{x}(E)-GT{x}(1))./2));
+                %try to plot grey rectangles for holds
+                rectangle('Position',[GT{x}(1),I,E,(max(SR)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
+                    'LineWidth',0.1)
+                %             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
+                %             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
+                text(x1,max(SR),num2str(a));
+                a=a+1;
+            end
+        end
+    end
+    plot(SR,'Color','b');
+    %     plot(D); hold on;
+    plot([IX IX],[min(SR) max(SR)]);
+    xlim([IX-45 IX+45])
     hold off;
     pause(0.0333)
     F = getframe(gcf);
+
     writeVideo(vidObj,F);
 end
 close(vidObj)
- 
-plot(lc2,pk2,'x','Color','r'); %plot major peaks (submove peaks)
-hold on
-plot([0 length(S)],[0.2 0.2]); %draw cut-off line
-a=1;
-if ~isempty(GT),%plot holds if they're found
-    for x = 1:length(GT),
-        if length(GT{x})>=3,
-            I = min(S);
-            E = length(GT{x});
-            x1 = floor(GT{x}(1)+((GT{x}(E)-GT{x}(1))./2));
-            %try to plot grey rectangles for holds
-            rectangle('Position',[GT{x}(1),I,E,(max(S)-I)],'FaceColor',[0.5 0.5 0.5],'EdgeColor','none',...
-            'LineWidth',0.1)
-%             plot([GT{x}(1) GT{x}(1)],[I max(S)]);
-%             plot([GT{x}(E) GT{x}(E)],[I max(S)]);
-            text(x1,max(S),num2str(a));
-            a=a+1;
-        end
-    end
 end
-plot(S,'Color','b');
-title(['Submoves trial: ',num2str(i),'  ',H,'-hand'])
-saveas(gcf,[OutPath,'sbj_',num2str(pp),'_Submoves_trial-',num2str(i),'_',H]);
-hold off
-close(gcf)
-
-end
-
 
 
 function Beh = gen_beh
